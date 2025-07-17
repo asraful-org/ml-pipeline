@@ -1,0 +1,48 @@
+name: ML Model Training and Remote Tracking
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  train-model:
+    runs-on: ubuntu-latest
+
+    env:
+      # This points the MLflow client on the GitHub Actions runner
+      # to your remote MLflow Tracking Server.
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI_REMOTE }}
+      # If your MLflow server or local script needs AWS credentials to write artifacts
+      # directly to S3 (less common if server handles it, but good for direct artifact logging)
+      # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      # AWS_REGION: your-aws-region # e.g., us-east-1
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run ML training and log with MLflow to remote server
+        run: |
+          python src/train.py
+
+      # No need to upload 'mlruns/' as an artifact anymore,
+      # as all tracking data goes directly to the remote MLflow server.
+      # You can still upload specific artifacts if needed.
+      - name: Upload model.pkl as GitHub Actions artifact (optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model-pkl
+          path: model.pkl
+          retention-days: 7
