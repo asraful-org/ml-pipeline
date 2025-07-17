@@ -25,9 +25,16 @@ if __name__ == "__main__":
 
     # Define hyperparameters to log
     hyperparameters = {
-        "solver": "lbfgs",
-        "max_iter": 1000,
-        "random_state": 42
+        "penalty": "l2",         # Regularization type: 'l1', 'l2', 'elasticnet', 'none'
+                                 # 'l2' is default and often a good starting point.
+        "C": 1.0,                # Inverse of regularization strength (float).
+                                 # Smaller C means stronger regularization. Default is 1.0.
+        "solver": "lbfgs",       # Optimization algorithm. 'lbfgs' is default.
+                                 # Compatible with 'l2' and 'none' penalties.
+                                 # If you change penalty to 'l1' or 'elasticnet', you'd need 'saga'.
+        "max_iter": 1000,        # Maximum number of iterations for the solver.
+                                 # Increased from default 100 to avoid convergence warnings.
+        "random_state": 42       # Seed for reproducibility if solver uses randomness.
     }
 
     with mlflow.start_run():

@@ -35,7 +35,10 @@ jobs:
 
       - name: Run ML training and log with MLflow to remote server
         run: |
+          echo "Starting ML training script..."
           python src/train.py
+          echo "ML training script finished."
+          
 
       # No need to upload 'mlruns/' as an artifact anymore,
       # as all tracking data goes directly to the remote MLflow server.

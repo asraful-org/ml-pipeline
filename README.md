@@ -62,3 +62,10 @@ Your team has developed a classification model. You’ve received a working `tra
 - How you’d extend the solution (e.g., model versioning, A/B testing)
 - How you would scale or secure it in a production setting
 - What parts you automated with AI and why
+
+
+
+
+## references 
+
+- https://mlflow.org/docs/latest/ml/tracking/tutorials/remote-server/
