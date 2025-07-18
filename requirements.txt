@@ -1,6 +1,6 @@
 scikit-learn
 joblib
-mlflow
+mlflow==2.7.1
 numpy
 azure-ai-ml # For MLClient
 azure-identity # For DefaultAzureCredential
