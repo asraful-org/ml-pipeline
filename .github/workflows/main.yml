@@ -1,51 +1,78 @@
-name: ML Model Training and Remote Tracking
+name: ML Model Training and Tracking to Azure ML
 
 on:
   push:
     branches:
       - main
+  # You might also want to trigger on pull requests for linting/testing
+  # pull_request:
+  #   branches:
+  #     - main
 
 jobs:
   train-model:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Using a standard Ubuntu runner provided by GitHub
 
+    # Permissions are crucial for OIDC authentication with Azure
+    permissions:
+      id-token: write # Required to fetch OIDC ID token for Azure login
+      contents: read  # Required to checkout the repository code
+
+    # Define environment variables that will be available to all steps in this job.
+    # These values are pulled from your GitHub Secrets for security.
     env:
-      # This points the MLflow client on the GitHub Actions runner
-      # to your remote MLflow Tracking Server.
-      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI_REMOTE }}
-      # If your MLflow server or local script needs AWS credentials to write artifacts
-      # directly to S3 (less common if server handles it, but good for direct artifact logging)
-      # AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      # AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      # AWS_REGION: your-aws-region # e.g., us-east-1
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+      AZURE_ML_WORKSPACE_NAME: ${{ secrets.AZURE_ML_WORKSPACE_NAME }}
+      # No need to explicitly set MLFLOW_TRACKING_URI here anymore, as train.py
+      # will dynamically retrieve it via the Azure ML SDK.
 
     steps:
       - name: Checkout code
+        # Action to checkout your repository code into the runner's workspace
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Azure Login (for DefaultAzureCredential)
+        # This action authenticates your GitHub Actions runner to Azure using OIDC.
+        # It sets up credentials that DefaultAzureCredential in your Python script can use.
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}      # Your Azure AD Application (client) ID
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}      # Your Azure AD Directory (tenant) ID
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }} # Your Azure Subscription ID
+
+      - name: Set up Python environment
+        # Action to set up a specific Python version
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.9' # Ensure this matches your development environment
 
       - name: Install dependencies
+        # Install required Python packages from requirements.txt
         run: |
+          echo "Upgrading pip..."
           python -m pip install --upgrade pip
+          echo "Installing dependencies from requirements.txt..."
           pip install -r requirements.txt
+          echo "Dependencies installed."
 
-      - name: Run ML training and log with MLflow to remote server
+      - name: Run ML training and log with MLflow
+        # Execute your main training script.
+        # The script will use the environment variables (set in the 'env' block)
+        # and the Azure login from the previous step to connect to Azure ML
+        # and log MLflow runs to your workspace.
         run: |
           echo "Starting ML training script..."
           python src/train.py
           echo "ML training script finished."
-          
 
-      # No need to upload 'mlruns/' as an artifact anymore,
-      # as all tracking data goes directly to the remote MLflow server.
-      # You can still upload specific artifacts if needed.
       - name: Upload model.pkl as GitHub Actions artifact (optional)
+        # This step uploads the locally generated model.pkl file as an artifact
+        # attached to this GitHub Actions run. This is for easy access directly
+        # from the GitHub UI, separate from MLflow's artifact store in Azure.
         uses: actions/upload-artifact@v4
         with:
           name: trained-model-pkl
-          path: model.pkl
-          retention-days: 7
+          path: model.pkl # Path to the model.pkl file created by train.py
+          retention-days: 7 # How long to keep the artifact (e.g., 7 days)
+        if: success() # Only upload if the previous steps succeeded
