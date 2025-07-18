@@ -65,6 +65,7 @@ if __name__ == "__main__":
         "max_iter": 1000,
         "random_state": 42
     }
+    registered_model_name = "IrisLogisticRegressionModel"
 
     # Start an MLflow run
     with mlflow.start_run() as run:
@@ -102,8 +103,36 @@ if __name__ == "__main__":
         print(f"  Recall: {recall:.4f}")
         print(f"  F1 Score: {f1:.4f}")
 
-        print("Logging model with mlflow.sklearn.log_model...")
-        mlflow.sklearn.log_model(model, "logistic_regression_model")
+       #  print("Logging model with mlflow.sklearn.log_model...")
+       # mlflow.sklearn.log_model(model, "logistic_regression_model")
+
+        model_artifact_path = "logistic_regression_model_artifact"
+        print(f"Logging model to run artifacts at path: {model_artifact_path}...")
+        mlflow.sklearn.log_model(
+            sk_model=model, # Use sk_model for sklearn flavor (or pytorch_model for PyTorch, etc.)
+            artifact_path=model_artifact_path,
+        )
+        print("Model logged as artifact.")
+
+
+        # 2. Construct the run_uri for the logged model
+        # This URI points to the model artifact within the MLflow Tracking Server
+        run_uri = f"runs:/{run_id}/{model_artifact_path}"
+        print(f"Constructed run_uri for model: {run_uri}")
+
+        # 3. Register the model from the run_uri to the MLflow Model Registry
+        # The second argument is the NAME of the model in the Model Registry
+        print(f"Registering model '{registered_model_name}' to MLflow Model Registry...")
+        registered_model = mlflow.register_model(
+            model_uri=run_uri,
+            name=registered_model_name # This is the unique name of the model in the registry
+        )
+        print(f"Model registered. Version: {registered_model.version}")
+
+
+
+
+
 
         joblib_model_path = "model.pkl"
         print(f"Saving model with joblib to {joblib_model_path}...")
