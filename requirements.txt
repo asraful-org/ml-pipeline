@@ -2,3 +2,6 @@ scikit-learn
 joblib
 mlflow
 numpy
+azure-ai-ml # For MLClient
+azure-identity # For DefaultAzureCredential
+azureml-mlflow # For MLflow integration with Azure ML

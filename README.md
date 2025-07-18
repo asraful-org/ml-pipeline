@@ -69,3 +69,12 @@ Your team has developed a classification model. You’ve received a working `tra
 ## references 
 
 - https://mlflow.org/docs/latest/ml/tracking/tutorials/remote-server/
+
+
+In Progress 
+
+
+https://learn.microsoft.com/en-us/azure/machine-learning/how-to-use-mlflow-configure-tracking?view=azureml-api-2&tabs=cli%2Cmlflow
+
+
+- azure compute > and ml flow  < it will automatically compitable with azure machine learning, no extra setup required for ML Flow

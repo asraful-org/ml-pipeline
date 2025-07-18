@@ -1,72 +1,117 @@
 import joblib
+import os
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import mlflow
-import os
+import mlflow.sklearn # Required for mlflow.sklearn.log_model
 
-# Set MLflow tracking URI (can be a local directory, a database, or a remote server)
-# For this example, we'll use a local 'mlruns' directory.
-# In a real-world scenario, you might point this to an MLflow server.
-# If you have an MLflow tracking server, you would set it like:
-# os.environ["MLFLOW_TRACKING_URI"] = "http://your-mlflow-server:5000"
+# --- Azure ML SDK Imports for MLflow Tracking URI ---
+from azure.ai.ml import MLClient
+from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential # For authentication
 
-# Explicitly set the tracking URI for local tracking.
-# If MLFLOW_TRACKING_URI is not set, MLflow defaults to ./mlruns.
-# However, explicitly setting it is good practice, especially in CI/CD.
-mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "mlruns"))
-mlflow.set_experiment("Iris_Logistic_Regression_Experiment")
+# --- Azure ML Workspace Details (FILL THESE IN!) ---
+# You need to replace these placeholders with your actual Azure ML workspace details.
+# These can be found in the Azure portal or by using 'az ml workspace show'.
+SUBSCRIPTION_ID = os.environ.get("AZURE_SUBSCRIPTION_ID")
+RESOURCE_GROUP_NAME = os.environ.get("AZURE_RESOURCE_GROUP_NAME")
+WORKSPACE_NAME = os.environ.get("AZURE_ML_WORKSPACE_NAME")
+
+# --- MLflow Configuration ---
+# 1. Connect to Azure ML workspace to get the MLflow Tracking URI
+try:
+    # Authenticate to Azure. DefaultAzureCredential tries various methods
+    # (environment variables, managed identity, VS Code, Azure CLI, etc.).
+    # InteractiveBrowserCredential is good for local interactive use if others fail.
+    # Consider using InteractiveBrowserCredential() for local dev for a browser popup login
+    # or DefaultAzureCredential() for more automated environments (like CI/CD, if properly configured).
+    ml_client = MLClient(
+        credential=DefaultAzureCredential(),
+        subscription_id=SUBSCRIPTION_ID,
+        resource_group_name=RESOURCE_GROUP_NAME,
+        workspace_name=WORKSPACE_NAME
+    )
+    # Retrieve the MLflow tracking URI from the connected workspace
+    azure_mlflow_tracking_uri = ml_client.workspaces.get(ml_client.workspace_name).mlflow_tracking_uri
+    mlflow.set_tracking_uri(azure_mlflow_tracking_uri)
+    print(f"MLflow Tracking URI set to Azure ML: {mlflow.get_tracking_uri()}")
+
+    # Set the experiment name. MLflow will create it if it doesn't exist within Azure ML.
+    mlflow.set_experiment("Iris_Logistic_Regression_Azure_AML")
+
+except Exception as e:
+    print(f"Could not connect to Azure ML or retrieve MLflow URI: {e}")
+    print("Defaulting to local MLflow tracking ('mlruns/' directory).")
+    mlflow.set_tracking_uri("mlruns")
+    mlflow.set_experiment("Iris_Logistic_Regression_Local")
+
+
+print(f"Final MLflow Tracking URI: {mlflow.get_tracking_uri()}")
 
 
 if __name__ == "__main__":
+    # Load the Iris dataset
     X, y = load_iris(return_X_y=True)
+
+    # Split the data into training and testing sets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Define hyperparameters to log
+    # Define hyperparameters for the Logistic Regression model
     hyperparameters = {
-        "penalty": "l2",         # Regularization type: 'l1', 'l2', 'elasticnet', 'none'
-                                 # 'l2' is default and often a good starting point.
-        "C": 1.0,                # Inverse of regularization strength (float).
-                                 # Smaller C means stronger regularization. Default is 1.0.
-        "solver": "lbfgs",       # Optimization algorithm. 'lbfgs' is default.
-                                 # Compatible with 'l2' and 'none' penalties.
-                                 # If you change penalty to 'l1' or 'elasticnet', you'd need 'saga'.
-        "max_iter": 1000,        # Maximum number of iterations for the solver.
-                                 # Increased from default 100 to avoid convergence warnings.
-        "random_state": 42       # Seed for reproducibility if solver uses randomness.
+        "penalty": "l2",
+        "C": 1.0,
+        "solver": "lbfgs",
+        "max_iter": 1000,
+        "random_state": 42
     }
 
-    with mlflow.start_run():
+    # Start an MLflow run
+    with mlflow.start_run() as run:
+        run_id = run.info.run_id
+        experiment_id = run.info.experiment_id
+        print(f"MLflow Run ID: {run_id}")
+        print(f"MLflow Experiment ID: {experiment_id}")
+
+        # Initialize and train the Logistic Regression model
         model = LogisticRegression(**hyperparameters)
         model.fit(X_train, y_train)
 
-        # Make predictions
+        # Make predictions on the test set
         y_pred = model.predict(X_test)
 
-        # Calculate metrics
+        # Calculate evaluation metrics
         accuracy = accuracy_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred, average='weighted')
-        recall = recall_score(y_test, y_pred, average='weighted')
-        f1 = f1_score(y_test, y_pred, average='weighted')
+        precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+        recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
 
-        # Log hyperparameters
+        # --- MLflow Logging ---
+        print("Logging parameters...")
         mlflow.log_params(hyperparameters)
 
-        # Log metrics
+        print("Logging metrics...")
         mlflow.log_metric("accuracy", accuracy)
         mlflow.log_metric("precision", precision)
         mlflow.log_metric("recall", recall)
         mlflow.log_metric("f1_score", f1)
 
-        print(f"Accuracy: {accuracy}")
-        print(f"Precision: {precision}")
-        print(f"Recall: {recall}")
-        print(f"F1 Score: {f1}")
+        print(f"Metrics for Run ID: {run_id}")
+        print(f"  Accuracy: {accuracy:.4f}")
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall: {recall:.4f}")
+        print(f"  F1 Score: {f1:.4f}")
 
-        # Log the model (Scikit-learn flavor)
+        print("Logging model with mlflow.sklearn.log_model...")
         mlflow.sklearn.log_model(model, "logistic_regression_model")
 
-        # You can still save it with joblib if you prefer a separate .pkl file
-        joblib.dump(model, "model.pkl")
-        mlflow.log_artifact("model.pkl") # Log the .pkl file as an artifact
+        joblib_model_path = "model.pkl"
+        print(f"Saving model with joblib to {joblib_model_path}...")
+        joblib.dump(model, joblib_model_path)
+
+        print(f"Logging {joblib_model_path} as an MLflow artifact...")
+        mlflow.log_artifact(joblib_model_path)
+
+        print("\nTraining and logging complete.")
+        print(f"View MLflow UI via Azure ML Studio: https://ml.azure.com/")
+        print("Navigate to 'Jobs' or 'Experiments' to see your runs.")
