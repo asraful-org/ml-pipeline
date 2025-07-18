@@ -1,78 +1,246 @@
-name: ML Model Training and Tracking to Azure ML
+name: CI/CD for ML Model and Inference API
 
 on:
   push:
     branches:
       - main
-  # You might also want to trigger on pull requests for linting/testing
-  # pull_request:
-  #   branches:
-  #     - main
+  workflow_dispatch: # Allows manual trigger
+
+# Define reusable environment variables for the workflow
+# These will be available to all jobs and steps unless overridden
+env:
+  # Azure ML Workspace Details (used by train.py and app.py)
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+  AZURE_ML_WORKSPACE_NAME: ${{ secrets.AZURE_ML_WORKSPACE_NAME }}
+
+  # Inference API Specifics (used by app.py)
+  REGISTERED_MODEL_NAME: "IrisLogisticRegressionModel" # This should match what's in src/train.py
+  MODEL_VERSION: "latest" # Or a specific version number, e.g., "1"
+
+  # Azure Container Registry (ACR) Details
+  ACR_NAME: "modleregistry" # <<<< REPLACE with your ACR name (e.g., 'youruniqueregnam')
+  IMAGE_NAME: "iris-inference-api"
+  IMAGE_TAG: "latest" # Or consider using github.sha for unique image builds
+
+  # Azure Container Instance (ACI) Details
+  ACI_RESOURCE_GROUP: "ml-pipeline-dev" # <<<< REPLACE with your ACI Resource Group
+  ACI_NAME: "iris-api-instance" # <<<< REPLACE with your desired ACI instance name
+  ACI_PORT: 5001 # Port your Flask app exposes
+
+  # Azure API Management (APIM) Details
+  APIM_RESOURCE_GROUP: "ml-pipeline-dev" # <<<< REPLACE with your APIM Resource Group
+  APIM_SERVICE_NAME: "ml-api-management-rg" # <<<< REPLACE with your existing APIM service name
+  APIM_API_ID: "iris-inference-api" # <<<< REPLACE with a unique ID for the API in APIM (e.g., 'iris-classifier')
+  APIM_API_DISPLAY_NAME: "Iris Classifier API"
+  APIM_API_SUFFIX: "iris" # The suffix for the API URL in APIM (e.g., /iris)
 
 jobs:
-  train-model:
-    runs-on: ubuntu-latest # Using a standard Ubuntu runner provided by GitHub
+  train_model:
+    name: ML Model Training and Tracking to Azure ML
+    runs-on: ubuntu-latest
 
-    # Permissions are crucial for OIDC authentication with Azure
     permissions:
-      id-token: write # Required to fetch OIDC ID token for Azure login
-      contents: read  # Required to checkout the repository code
+      id-token: write # Required for OIDC
+      contents: read
 
-    # Define environment variables that will be available to all steps in this job.
-    # These values are pulled from your GitHub Secrets for security.
-    env:
+    env: # These are specific to the train_model job's env block
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
       AZURE_ML_WORKSPACE_NAME: ${{ secrets.AZURE_ML_WORKSPACE_NAME }}
-      # No need to explicitly set MLFLOW_TRACKING_URI here anymore, as train.py
-      # will dynamically retrieve it via the Azure ML SDK.
 
     steps:
       - name: Checkout code
-        # Action to checkout your repository code into the runner's workspace
         uses: actions/checkout@v4
 
-      - name: Azure Login (for DefaultAzureCredential)
-        # This action authenticates your GitHub Actions runner to Azure using OIDC.
-        # It sets up credentials that DefaultAzureCredential in your Python script can use.
+      - name: Azure Login (for DefaultAzureCredential - OIDC)
         uses: azure/login@v1
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}      # Your Azure AD Application (client) ID
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}      # Your Azure AD Directory (tenant) ID
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }} # Your Azure Subscription ID
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Set up Python environment
-        # Action to set up a specific Python version
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9' # Ensure this matches your development environment
+          python-version: '3.9'
 
       - name: Install dependencies
-        # Install required Python packages from requirements.txt
         run: |
-          echo "Upgrading pip..."
           python -m pip install --upgrade pip
-          echo "Installing dependencies from requirements.txt..."
           pip install -r requirements.txt
-          echo "Dependencies installed."
+          pip install azure-ai-ml azure-identity mlflow # Ensure mlflow is installed
 
       - name: Run ML training and log with MLflow
-        # Execute your main training script.
-        # The script will use the environment variables (set in the 'env' block)
-        # and the Azure login from the previous step to connect to Azure ML
-        # and log MLflow runs to your workspace.
         run: |
-          echo "Starting ML training script..."
           python src/train.py
-          echo "ML training script finished."
 
       - name: Upload model.pkl as GitHub Actions artifact (optional)
-        # This step uploads the locally generated model.pkl file as an artifact
-        # attached to this GitHub Actions run. This is for easy access directly
-        # from the GitHub UI, separate from MLflow's artifact store in Azure.
         uses: actions/upload-artifact@v4
         with:
           name: trained-model-pkl
-          path: model.pkl # Path to the model.pkl file created by train.py
-          retention-days: 7 # How long to keep the artifact (e.g., 7 days)
-        if: success() # Only upload if the previous steps succeeded
+          path: model.pkl
+          retention-days: 7
+        if: success()
+
+  build_push_docker_image:
+    needs: train_model
+    runs-on: ubuntu-latest
+    permissions: # Each job needs its own id-token write permission for OIDC
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Azure Login (for ACR push - OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }} # Use top-level env var for subscription-id
+
+      - name: Build and push Docker image to ACR
+        # Note: azure/docker-login is not strictly needed here if azure/login (OIDC) sets up Docker context
+        # The docker/build-push-action can often leverage the az login context directly.
+        # If you face issues, you might need `az acr login --name ${{ env.ACR_NAME }}` after `azure/login`
+        # OR switch back to `azure/docker-login` if that's more reliable in your setup.
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: inference_api/Dockerfile
+          push: true
+          tags: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          env:
+            AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
+            AZURE_RESOURCE_GROUP_NAME: ${{ env.AZURE_RESOURCE_GROUP_NAME }}
+            AZURE_ML_WORKSPACE_NAME: ${{ env.AZURE_ML_WORKSPACE_NAME }}
+            REGISTERED_MODEL_NAME: ${{ env.REGISTERED_MODEL_NAME }}
+            MODEL_VERSION: ${{ env.MODEL_VERSION }}
+
+  deploy_to_aci:
+    needs: build_push_docker_image
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: # Each job needs its own id-token write permission for OIDC
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (for ACI deployment - OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Container Instances
+        id: deployaci
+        uses: azure/aci-deploy@v1
+        with:
+          resource-group: ${{ env.ACI_RESOURCE_GROUP }}
+          name: ${{ env.ACI_NAME }}
+          image: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          dns-name-label: iris-api-${{ github.run_id }}
+          port: ${{ env.ACI_PORT }}
+          environment-variables: |
+            AZURE_SUBSCRIPTION_ID=${{ env.AZURE_SUBSCRIPTION_ID }}
+            AZURE_RESOURCE_GROUP_NAME=${{ env.AZURE_RESOURCE_GROUP_NAME }}
+            AZURE_ML_WORKSPACE_NAME=${{ env.AZURE_ML_WORKSPACE_NAME }}
+            REGISTERED_MODEL_NAME=${{ env.REGISTERED_MODEL_NAME }}
+            MODEL_VERSION: ${{ env.MODEL_VERSION }}
+          # For pulling from private ACR with OIDC login, ACI needs to know to use the managed identity or SPN
+          # It typically requires the ACR to be configured for "Managed Identity Authentication"
+          # or the ACI to be granted AcrPull role directly to the ACR.
+          # For simplicity with OIDC, sometimes you still need to explicitly pass the SPN details to ACI.
+          # However, the `azure/aci-deploy` action often intelligently uses the logged-in context.
+          # If it fails, you might need to add `acr-username: <SPN App ID>` and `acr-password: <SPN client secret>`
+          # (meaning you'd need the SPN secret *just* for ACI pull, even if not for az login).
+          # A cleaner way is to give the ACI's *managed identity* (if ACI creates one) permission to pull from ACR.
+          # For this example, let's keep it simple; if it fails, the problem is usually ACR pull auth.
+
+      - name: Get ACI FQDN and Construct API URL
+        run: |
+          sleep 10 # Give ACI a moment to provision and get FQDN
+          RETRIES=5
+          ACI_FQDN=""
+          for i in $(seq 1 $RETRIES); do
+              ACI_FQDN=$(az container show \
+                --resource-group ${{ env.ACI_RESOURCE_GROUP }} \
+                --name ${{ env.ACI_NAME }} \
+                --query ipAddress.fqdn \
+                --output tsv 2>/dev/null)
+              if [ -n "$ACI_FQDN" ]; then
+                  echo "Found ACI FQDN: ${ACI_FQDN}"
+                  break
+              fi
+              echo "ACI FQDN not yet available, retrying in 10 seconds..."
+              sleep 10
+          done
+
+          if [ -z "$ACI_FQDN" ]; then
+              echo "Failed to retrieve ACI FQDN after multiple retries. Exiting."
+              exit 1
+          fi
+
+          ACI_URL="http://${ACI_FQDN}:${{ env.ACI_PORT }}"
+          echo "ACI_URL=${ACI_URL}" >> $GITHUB_ENV
+
+      - name: Wait for ACI to be ready
+        run: |
+          echo "Waiting for ACI to become available at ${{ env.ACI_URL }}/..."
+          timeout 300 bash -c 'until curl -sS ${{ env.ACI_URL }}/ > /dev/null; do sleep 10; done'
+          echo "ACI is ready."
+
+  update_api_management:
+    needs: deploy_to_aci
+    runs-on: ubuntu-latest
+    permissions: # Each job needs its own id-token write permission for OIDC
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (for APIM update - OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update or Create API in API Management
+        run: |
+          ACI_BACKEND_URL="${{ env.ACI_URL }}"
+          echo "APIM Backend URL will be: ${ACI_BACKEND_URL}"
+
+          API_EXISTS=$(az apim api show \
+            --resource-group ${{ env.APIM_RESOURCE_GROUP }} \
+            --service-name ${{ env.APIM_SERVICE_NAME }} \
+            --api-id ${{ env.APIM_API_ID }} \
+            --query name \
+            --output tsv 2>/dev/null)
+
+          if [ -z "$API_EXISTS" ]; then
+            echo "API '${{ env.APIM_API_ID }}' does not exist. Creating new API..."
+            az apim api create \
+              --resource-group ${{ env.APIM_RESOURCE_GROUP }} \
+              --service-name ${{ env.APIM_SERVICE_NAME }} \
+              --api-id ${{ env.APIM_API_ID }} \
+              --display-name "${{ env.APIM_API_DISPLAY_NAME }}" \
+              --path ${{ env.APIM_API_SUFFIX }} \
+              --protocols Http \
+              --service-url "${ACI_BACKEND_URL}/"
+          else
+            echo "API '${{ env.APIM_API_ID }}' exists. Updating its backend URL..."
+            az apim api update \
+              --resource-group ${{ env.APIM_RESOURCE_GROUP }} \
+              --service-name ${{ env.APIM_SERVICE_NAME }} \
+              --api-id ${{ env.APIM_API_ID }} \
+              --service-url "${ACI_BACKEND_URL}/"
+          fi
+
+          echo "API Management update complete for API ID: ${{ env.APIM_API_ID }}"
+          echo "Backend URL set to: ${ACI_BACKEND_URL}"
