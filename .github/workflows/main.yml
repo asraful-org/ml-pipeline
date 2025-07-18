@@ -6,7 +6,7 @@ on:
       - main
   workflow_dispatch: # Allows manual trigger
 
-# Define reusable environment variables for the workflow
+# Define reusable environment variables for the workflow ###
 # These will be available to all jobs and steps unless overridden
 env:
   # Azure ML Workspace Details (used by train.py and app.py)
