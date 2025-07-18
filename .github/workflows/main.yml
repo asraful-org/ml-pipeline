@@ -103,10 +103,6 @@ jobs:
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }} # Use top-level env var for subscription-id
 
       - name: Build and push Docker image to ACR
-        # Note: azure/docker-login is not strictly needed here if azure/login (OIDC) sets up Docker context
-        # The docker/build-push-action can often leverage the az login context directly.
-        # If you face issues, you might need `az acr login --name ${{ env.ACR_NAME }}` after `azure/login`
-        # OR switch back to `azure/docker-login` if that's more reliable in your setup.
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -146,21 +142,13 @@ jobs:
           image: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           dns-name-label: iris-api-${{ github.run_id }}
           port: ${{ env.ACI_PORT }}
+          # CORRECTED: Use KEY=VALUE format for environment-variables
           environment-variables: |
             AZURE_SUBSCRIPTION_ID=${{ env.AZURE_SUBSCRIPTION_ID }}
             AZURE_RESOURCE_GROUP_NAME=${{ env.AZURE_RESOURCE_GROUP_NAME }}
             AZURE_ML_WORKSPACE_NAME=${{ env.AZURE_ML_WORKSPACE_NAME }}
             REGISTERED_MODEL_NAME=${{ env.REGISTERED_MODEL_NAME }}
-            MODEL_VERSION: ${{ env.MODEL_VERSION }}
-          # For pulling from private ACR with OIDC login, ACI needs to know to use the managed identity or SPN
-          # It typically requires the ACR to be configured for "Managed Identity Authentication"
-          # or the ACI to be granted AcrPull role directly to the ACR.
-          # For simplicity with OIDC, sometimes you still need to explicitly pass the SPN details to ACI.
-          # However, the `azure/aci-deploy` action often intelligently uses the logged-in context.
-          # If it fails, you might need to add `acr-username: <SPN App ID>` and `acr-password: <SPN client secret>`
-          # (meaning you'd need the SPN secret *just* for ACI pull, even if not for az login).
-          # A cleaner way is to give the ACI's *managed identity* (if ACI creates one) permission to pull from ACR.
-          # For this example, let's keep it simple; if it fails, the problem is usually ACR pull auth.
+            MODEL_VERSION=${{ env.MODEL_VERSION }} # Corrected line 117
 
       - name: Get ACI FQDN and Construct API URL
         run: |
