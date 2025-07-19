@@ -26,8 +26,7 @@
 # How to Run the Training Pipeline
 
 ```
- Commit to<img width="830" height="568" alt="Screenshot 2025-07-20 at 1 31 18" src="https://github.com/user-attachments/assets/3f5cf4ea-e035-4a4d-a06b-7ae64ff9ad61" />
- main branch will trigger the end to end pipeline / manual trigger is also possible from githubActions 
+ Commit to main branch will trigger the end to end pipeline / manual trigger is also possible from githubActions 
 ```
 ## Reqired Repository secrets 
 
