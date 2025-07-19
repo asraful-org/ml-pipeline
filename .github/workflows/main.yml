@@ -25,7 +25,7 @@ env:
 
   # Azure Container Instance (ACI) Details
   ACI_RESOURCE_GROUP: "ml-pipeline-dev" # <<<< REPLACE with your ACI Resource Group
-  ACI_NAME: "ml-container-instance" # <<<< REPLACE with your desired ACI instance name
+  ACI_NAME: "ml-container-instance-2" # <<<< REPLACE with your desired ACI instance name
   ACI_PORT: 5001 # Port your Flask app exposes
 
   AZURE_REGION: "East US 2"
