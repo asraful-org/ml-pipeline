@@ -8,6 +8,7 @@ COPY inference_api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY inference_api/app.py .
+COPY inference_api/model.pkl .
 
 EXPOSE 5001
 
