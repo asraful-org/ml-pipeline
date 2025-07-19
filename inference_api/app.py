@@ -1,112 +1,205 @@
 import os
 import numpy as np
 from flask import Flask, request, jsonify
-import pickle # Import pickle for loading local model
+import pickle
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
 # --- Configuration for Model ---
-# If your model.pkl is bundled in the Docker image,
-# it will be loaded directly from the file system.
-# No dynamic versioning or Azure ML connection needed for this approach.
-REGISTERED_MODEL_NAME = "IrisLogisticRegressionModel" # Static name for health check
-MODEL_VERSION = "local_bundled" # Indicate it's a local, bundled model
+REGISTERED_MODEL_NAME = "IrisLogisticRegressionModel"
+MODEL_VERSION = "local_bundled"
 
-# Initialize model as None. This will be populated by the direct loading attempt.
+# Initialize model as None
 model = None
 
-# --- Model Loading (Original/Simplified Approach) ---
-# This block attempts to load the model directly when the Flask application starts.
-# It runs only once at startup.
-try:
-    # Assuming model.pkl is located in the same directory as app.py (i.e., /app inside the container)
-    with open("model.pkl", 'rb') as f:
-        model = pickle.load(f)
-    print("Model 'model.pkl' loaded successfully from local file system.")
-except FileNotFoundError:
-    print("Error: model.pkl not found. Model will not be loaded.")
-    # In a production scenario, you might want to raise a critical error here
-    # to prevent the container from starting if the model is essential.
-except Exception as e:
-    print(f"Error loading model from local file system: {e}")
-    print("Please ensure model.pkl exists and is a valid pickle file.")
-    model = None
+def load_model():
+    """Load the model from the local file system."""
+    global model
+    try:
+        with open("model.pkl", 'rb') as f:
+            model = pickle.load(f)
+        logger.info("Model 'model.pkl' loaded successfully from local file system.")
+        return True
+    except FileNotFoundError:
+        logger.error("Error: model.pkl not found. Model will not be loaded.")
+        return False
+    except Exception as e:
+        logger.error(f"Error loading model from local file system: {e}")
+        return False
 
+# Load model at startup
+model_loaded_successfully = load_model()
+
+# If model loading is critical for the app, you might want to exit here
+if not model_loaded_successfully:
+    logger.warning("App starting without model. Some endpoints may not function properly.")
 
 @app.route('/')
 def home():
-    return "ML Model Inference API. Use /predict to get predictions."
+    return jsonify({
+        "message": "ML Model Inference API",
+        "endpoints": {
+            "/predict": "POST - Make predictions",
+            "/health": "GET - Health check",
+            "/model-info": "GET - Model information"
+        },
+        "model_status": "loaded" if model is not None else "not_loaded"
+    })
+
+@app.route('/model-info', methods=['GET'])
+def model_info():
+    """Get detailed model information."""
+    if model is None:
+        return jsonify({'error': 'Model not loaded'}), 503
+
+    model_details = {
+        "name": REGISTERED_MODEL_NAME,
+        "version": MODEL_VERSION,
+        "source": "Local/Bundled model.pkl",
+        "type": type(model).__name__
+    }
+
+    # Add model-specific details if available
+    if hasattr(model, 'n_features_in_'):
+        model_details["expected_features"] = model.n_features_in_
+    if hasattr(model, 'classes_'):
+        model_details["classes"] = model.classes_.tolist()
+
+    return jsonify(model_details)
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    """
-    Receives input data, makes predictions using the loaded model,
-    and returns the predictions.
-    """
+    """Make predictions using the loaded model."""
     if model is None:
-        # Updated error message to reflect local model loading
-        return jsonify({'error': 'Model not loaded. Server might be misconfigured or model.pkl is missing/corrupt.'}), 500
+        return jsonify({
+            'error': 'Model not loaded. Server might be misconfigured or model.pkl is missing/corrupt.'
+        }), 503
 
     try:
+        # Validate content type
+        if not request.is_json:
+            return jsonify({
+                'error': 'Content-Type must be application/json'
+            }), 400
+
         # Get data from the POST request
-        data = request.get_json(force=True)
+        data = request.get_json()
+        if data is None:
+            return jsonify({
+                'error': 'No JSON data provided'
+            }), 400
 
-        # Expected input: A dictionary with a 'data' key containing a list of feature vectors
-        # Example: {"data": [[5.1, 3.5, 1.4, 0.2], [6.2, 3.4, 5.4, 2.3]]}
+        # Validate input format
         features = data.get('data')
-        if not isinstance(features, list) or not all(isinstance(f, list) for f in features):
-            return jsonify({'error': 'Invalid input format. Expecting JSON with a "data" key containing a list of feature vectors (e.g., {"data": [[val1, val2,...], [val3, val4,...]]}).'}), 400
+        if not features:
+            return jsonify({
+                'error': 'Missing "data" key in JSON payload'
+            }), 400
 
-        # Convert to numpy array for prediction if the model expects it
-        input_array = np.array(features)
+        if not isinstance(features, list):
+            return jsonify({
+                'error': 'Data must be a list of feature vectors'
+            }), 400
+
+        # Validate feature vectors
+        for i, feature_vector in enumerate(features):
+            if not isinstance(feature_vector, list):
+                return jsonify({
+                    'error': f'Feature vector at index {i} must be a list of numbers'
+                }), 400
+
+            # Check for non-numeric values
+            try:
+                [float(x) for x in feature_vector]
+            except (ValueError, TypeError):
+                return jsonify({
+                    'error': f'Feature vector at index {i} contains non-numeric values'
+                }), 400
+
+        # Convert to numpy array
+        try:
+            input_array = np.array(features, dtype=float)
+        except Exception as e:
+            return jsonify({
+                'error': f'Failed to convert input to numpy array: {str(e)}'
+            }), 400
+
+        # Validate input dimensions
+        if hasattr(model, 'n_features_in_') and input_array.shape[1] != model.n_features_in_:
+            return jsonify({
+                'error': f'Expected {model.n_features_in_} features, got {input_array.shape[1]}'
+            }), 400
 
         # Make prediction
-        predictions = model.predict(input_array).tolist()
+        predictions = model.predict(input_array)
 
-        # Try to get probabilities if the model supports it
-        probabilities = None
-        if hasattr(model, 'predict_proba'):
-            probabilities = model.predict_proba(input_array).tolist()
-        elif hasattr(getattr(model, 'unwrap_python_model', None)(), 'predict_proba'): # More robust check for MLflow pyfunc wrappers
-            probabilities = model.unwrap_python_model().predict_proba(input_array).tolist()
-
+        # Convert numpy types to Python types for JSON serialization
+        predictions = [int(p) if isinstance(p, (np.integer, np.int32, np.int64))
+                       else float(p) if isinstance(p, (np.floating, np.float32, np.float64))
+        else p for p in predictions.tolist()]
 
         response = {'predictions': predictions}
-        if probabilities is not None:
-            response['probabilities'] = probabilities
+
+        # Add probabilities if available
+        if hasattr(model, 'predict_proba'):
+            try:
+                probabilities = model.predict_proba(input_array).tolist()
+                response['probabilities'] = probabilities
+            except Exception as e:
+                logger.warning(f"Could not get probabilities: {e}")
 
         return jsonify(response)
 
     except ValueError as ve:
-        app.logger.error(f"Invalid input data for model prediction: {ve}", exc_info=True)
-        return jsonify({'error': f'Invalid input data for model prediction: {ve}. Ensure numerical data and correct dimensionality.'}), 400
+        logger.error(f"Invalid input data for model prediction: {ve}")
+        return jsonify({
+            'error': f'Invalid input data: {str(ve)}'
+        }), 400
     except Exception as e:
-        # Log the full exception for debugging in production
-        app.logger.error(f"Prediction error: {e}", exc_info=True)
-        return jsonify({'error': 'An unexpected error occurred during prediction.'}), 500
+        logger.error(f"Prediction error: {e}", exc_info=True)
+        return jsonify({
+            'error': 'An unexpected error occurred during prediction'
+        }), 500
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """
-    Health check endpoint to verify if the application is running and model is loaded.
-    Updated to include model information for a locally bundled model.
-    """
+    """Health check endpoint."""
     status = "healthy" if model is not None else "unhealthy"
-    response_data = {"status": status, "model_loaded": model is not None}
+    response_data = {
+        "status": status,
+        "model_loaded": model is not None,
+        "service": "ML Inference API"
+    }
 
     if model is not None:
         response_data["model_info"] = {
             "name": REGISTERED_MODEL_NAME,
             "version": MODEL_VERSION,
-            "source": "Local/Bundled model.pkl" # Updated source
+            "source": "Local/Bundled model.pkl"
         }
-    else:
-        response_data["model_info"] = "Model not loaded"
 
-    return jsonify(response_data), 200
+    status_code = 200 if model is not None else 503
+    return jsonify(response_data), status_code
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({
+        'error': 'Endpoint not found',
+        'available_endpoints': ['/', '/predict', '/health', '/model-info']
+    }), 404
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return jsonify({
+        'error': 'Method not allowed for this endpoint'
+    }), 405
 
 if __name__ == '__main__':
-    # Use PORT environment variable, default to 5001
     port = int(os.getenv('PORT', 5001))
-    # In production, use a WSGI server like Gunicorn. debug=True should be avoided in production.
-    app.run(host='0.0.0.0', port=port)
+    # In production, use Gunicorn instead of the built-in server
+    app.run(host='0.0.0.0', port=port, debug=False)
