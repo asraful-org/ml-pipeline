@@ -22,6 +22,7 @@ We need to simulate the deployment of a machine learning model to production, st
 ## Decisions
 - Orchestration Strategy: GitHub Actions
 - Chosen: GitHub Actions for CI/CD
+- Combined training pipeline for training and deployment 
 
 ## Rationale:
 ✅ Zero additional infrastructure cost
