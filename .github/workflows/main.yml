@@ -148,7 +148,7 @@ jobs:
           name: ${{ env.ACI_NAME }}
           image: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           dns-name-label: iris-api-${{ github.run_id }}
-          port: ${{ env.ACI_PORT }}
+          ports: ${{ env.ACI_PORT }}
           location: ${{ env.AZURE_REGION }}
 
           registry-login-server: ${{ env.ACR_NAME }}.azurecr.io # Your ACR login server
