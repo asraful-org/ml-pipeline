@@ -26,8 +26,15 @@
 # How to Run the Training Pipeline
 
 ```
- Commit to main branch will trigger the end to end pipeline / manual trigger is also possible from githubActions 
-``` 
+ Commit to<img width="830" height="568" alt="Screenshot 2025-07-20 at 1 31 18" src="https://github.com/user-attachments/assets/3f5cf4ea-e035-4a4d-a06b-7ae64ff9ad61" />
+ main branch will trigger the end to end pipeline / manual trigger is also possible from githubActions 
+```
+## Reqired Repository secrets 
+
+<img width="830" height="568" alt="Screenshot 2025-07-20 at 1 31 18" src="https://github.com/user-attachments/assets/79d1c978-0b50-4c5d-b64e-2b3fac68d1d5" />
+
+
+
 - The training pipeline, defined in the train_model job of the CI/CD workflow, is responsible for ingesting data, training the machine learning model, and saving the trained artifacts.
 
 ## Prerequisites:
