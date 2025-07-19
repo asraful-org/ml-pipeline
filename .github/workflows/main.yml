@@ -151,9 +151,9 @@ jobs:
           port: ${{ env.ACI_PORT }}
           location: ${{ env.AZURE_REGION }}
 
-          #registry-login-server: ${{ env.ACR_NAME }}.azurecr.io # Your ACR login server
-          #registry-username: ${{ secrets.AZURE_CLIENT_ID }} # Service Principal's Application (client) ID
-          #registry-password: ${{ secrets.AZURE_CLIENT_SECRET }} # Service Principal's client secret
+          registry-login-server: ${{ env.ACR_NAME }}.azurecr.io # Your ACR login server
+          registry-username: ${{ secrets.ACR_USERNAME }} # Service Principal's Application (client) ID
+          registry-password: ${{ secrets.ACR_PASSWORD }} # Service Principal's client secret
 
           # CORRECTED: Use KEY=VALUE format for environment-variables
           environment-variables: |
