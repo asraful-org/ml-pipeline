@@ -156,12 +156,16 @@ jobs:
           registry-password: ${{ secrets.ACR_PASSWORD }} # Service Principal's client secret
 
           # CORRECTED: Use KEY=VALUE format for environment-variables
-          environment-variables: |
-            AZURE_SUBSCRIPTION_ID=${{ env.AZURE_SUBSCRIPTION_ID }}
-            AZURE_RESOURCE_GROUP_NAME=${{ env.AZURE_RESOURCE_GROUP_NAME }}
-            AZURE_ML_WORKSPACE_NAME=${{ env.AZURE_ML_WORKSPACE_NAME }}
-            REGISTERED_MODEL_NAME=${{ env.REGISTERED_MODEL_NAME }}
-            MODEL_VERSION=${{ env.MODEL_VERSION }} # Corrected line 117
+
+          environment-variables: AZURE_SUBSCRIPTION_ID=${{ env.AZURE_SUBSCRIPTION_ID }} AZURE_RESOURCE_GROUP_NAME=${{ env.AZURE_RESOURCE_GROUP_NAME }} AZURE_ML_WORKSPACE_NAME=${{ env.AZURE_ML_WORKSPACE_NAME }} REGISTERED_MODEL_NAME=${{ env.REGISTERED_MODEL_NAME }} MODEL_VERSION=${{ env.MODEL_VERSION }}
+
+          #environment-variables: |
+          #  AZURE_SUBSCRIPTION_ID=${{ env.AZURE_SUBSCRIPTION_ID }}
+          #  AZURE_RESOURCE_GROUP_NAME=${{ env.AZURE_RESOURCE_GROUP_NAME }}
+          #  AZURE_ML_WORKSPACE_NAME=${{ env.AZURE_ML_WORKSPACE_NAME }}
+          #  REGISTERED_MODEL_NAME=${{ env.REGISTERED_MODEL_NAME }}
+          #  MODEL_VERSION=${{ env.MODEL_VERSION }}
+
 
       - name: Get ACI FQDN and Construct API URL
         run: |
