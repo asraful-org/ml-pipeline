@@ -42,6 +42,11 @@ jobs:
     name: ML Model Training and Tracking to Azure ML
     runs-on: ubuntu-latest
 
+
+    # ADD THIS OUTPUTS SECTION
+    outputs:
+      model_checksum: ${{ steps.generate_checksum.outputs.checksum }}
+
     permissions:
       id-token: write # Required for OIDC
       contents: read
@@ -89,7 +94,7 @@ jobs:
           MODEL_CHECKSUM=$(sha256sum model.pkl | awk '{print $1}')
           echo "Model Checksum: $MODEL_CHECKSUM"
           echo "::set-output name=checksum::$MODEL_CHECKSUM"
-          echo "checksum=$MODEL_CHECKSUM" >> "$GITHUB_OUTPUT" # <<<< CORRECTED SYNTAX
+          echo "checksum=$MODEL_CHECKSUM" >> "$GITHUB_OUTPUT" 
 
 
       - name: Upload model.pkl as GitHub Actions artifact (optional)
