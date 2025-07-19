@@ -11,6 +11,9 @@ import mlflow.sklearn # Required for mlflow.sklearn.log_model
 from azure.ai.ml import MLClient
 from azure.identity import DefaultAzureCredential, InteractiveBrowserCredential # For authentication
 
+
+import numpy as np
+
 # --- Azure ML Workspace Details (FILL THESE IN!) ---
 # You need to replace these placeholders with your actual Azure ML workspace details.
 # These can be found in the Azure portal or by using 'az ml workspace show'.
