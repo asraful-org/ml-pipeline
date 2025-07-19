@@ -1,6 +1,9 @@
-Date: 2025-07-17
-Status: Approved
-Deciders: ML/Ops Engineering Team
+
+<h2>ADR-001 : ML Pipeline Design & Architecture Decisions</h2>
+
+<h3> 📅Date: 2025-07-17 </h3>
+<h3> 📌 Status: Approved </h3>
+<h3> 👥 Deciders: ML/Ops Engineering Team</h3>
 
 
 ## Context
