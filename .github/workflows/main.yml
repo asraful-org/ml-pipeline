@@ -1,0 +1,303 @@
+name: CI/CD for ML Model and Inference API
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # TODO Allows manual trigger
+
+# environment variables for the workflow
+env:
+
+  AZURE_REGION: "East US 2"
+
+  # Azure ML Workspace Details (used by train.py and app.py)
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+  AZURE_ML_WORKSPACE_NAME: ${{ secrets.AZURE_ML_WORKSPACE_NAME }}
+
+  # Inference API Specifics (used by app.py)
+  REGISTERED_MODEL_NAME: "IrisLogisticRegressionModel" # Same as >> in src/train.py
+  MODEL_VERSION: "latest" # TODO Improve it based on release strategy
+
+  # Azure Container Registry (ACR)
+  ACR_NAME: "modleregistry"
+  IMAGE_NAME: "iris-inference-api"
+  IMAGE_TAG: "latest"
+
+  # Azure Container Instance (ACI)
+  ACI_RESOURCE_GROUP: "ml-pipeline-dev"
+  ACI_NAME: "ml-container-instance"
+  ACI_PORT: 5001 # Flask app exposes
+
+  # Azure API Management (APIM)
+  APIM_RESOURCE_GROUP: "ml-pipeline-dev"
+  APIM_SERVICE_NAME: "ml-api-management-rg"
+  APIM_API_ID: "iris-inference-api"
+  APIM_API_DISPLAY_NAME: "Iris Classifier API"
+  APIM_API_SUFFIX: "iris"
+
+jobs:
+  train_model:
+    name: ML Model Training and Tracking to Azure ML
+    runs-on: ubuntu-latest
+
+    # ADD THIS OUTPUTS SECTION
+    outputs:
+      model_checksum: ${{ steps.generate_checksum.outputs.checksum }}
+
+    permissions:
+      id-token: write # Required for OIDC
+      contents: read
+
+    env: # These are specific to the train_model job's env block
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+      AZURE_ML_WORKSPACE_NAME: ${{ secrets.AZURE_ML_WORKSPACE_NAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login (for DefaultAzureCredential - OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install azure-ai-ml azure-identity mlflow
+
+      - name: Run ML training and log with MLflow
+        run: |
+          python src/train.py
+      # Required for model file integrity check
+      - name: Generate Model Checksum
+        id: generate_checksum
+        run: |
+          if [ ! -f model.pkl ]; then
+            echo "Error: model.pkl not found after training. Cannot generate checksum."
+            exit 1
+          fi
+          MODEL_CHECKSUM=$(sha256sum model.pkl | awk '{print $1}')
+          echo "Model Checksum: $MODEL_CHECKSUM"
+          echo "::set-output name=checksum::$MODEL_CHECKSUM"
+          echo "checksum=$MODEL_CHECKSUM" >> "$GITHUB_OUTPUT" 
+      # TODO trade-off
+      - name: Upload model.pkl as GitHub Actions artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model-pkl
+          path: model.pkl
+          retention-days: 7
+        if: success()
+
+  build_push_docker_image:
+    needs: train_model
+    runs-on: ubuntu-latest
+    permissions: # Permission for OIDC
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download trained model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model-pkl # This must match the name used in the upload step
+          path: inference_api/ # (e.g., inference_api/model.pkl)
+
+      - name: Verify Model Checksum # Verify checksum after download
+        run: |
+          DOWNLOADED_CHECKSUM=$(sha256sum inference_api/model.pkl | awk '{print $1}')
+          EXPECTED_CHECKSUM="${{ needs.train_model.outputs.model_checksum }}"
+          echo "Downloaded Checksum: $DOWNLOADED_CHECKSUM"
+          echo "Expected Checksum: $EXPECTED_CHECKSUM"
+          if [ "$DOWNLOADED_CHECKSUM" != "$EXPECTED_CHECKSUM" ]; then
+            echo "ERROR: Model artifact checksum mismatch! File might be corrupted during transfer."
+            exit 1
+          else
+            echo "Model artifact checksum verified successfully."
+          fi    
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Azure Login (for ACR push - OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Azure Container Registry Docker Login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build and push Docker image to ACR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: inference_api/Dockerfile
+          push: true
+          tags: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+        env:
+            AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
+            AZURE_RESOURCE_GROUP_NAME: ${{ env.AZURE_RESOURCE_GROUP_NAME }}
+            AZURE_ML_WORKSPACE_NAME: ${{ env.AZURE_ML_WORKSPACE_NAME }}
+            REGISTERED_MODEL_NAME: ${{ env.REGISTERED_MODEL_NAME }}
+            MODEL_VERSION: ${{ env.MODEL_VERSION }}
+
+  deploy_to_aci:
+    needs: build_push_docker_image
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: # Permission for OIDC
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (for ACI deployment - OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Container Instances
+        id: deployaci
+        uses: azure/aci-deploy@v1
+        with:
+          resource-group: ${{ env.ACI_RESOURCE_GROUP }}
+          name: ${{ env.ACI_NAME }}
+          image: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          dns-name-label: iris-api-${{ github.run_id }}
+          ports: ${{ env.ACI_PORT }}
+          location: ${{ env.AZURE_REGION }}
+
+          registry-login-server: ${{ env.ACR_NAME }}.azurecr.io # ACR login server
+          registry-username: ${{ secrets.ACR_USERNAME }}
+          registry-password: ${{ secrets.ACR_PASSWORD }}
+
+          environment-variables: AZURE_SUBSCRIPTION_ID=${{ env.AZURE_SUBSCRIPTION_ID }} AZURE_RESOURCE_GROUP_NAME=${{ env.AZURE_RESOURCE_GROUP_NAME }} AZURE_ML_WORKSPACE_NAME=${{ env.AZURE_ML_WORKSPACE_NAME }} REGISTERED_MODEL_NAME=${{ env.REGISTERED_MODEL_NAME }} MODEL_VERSION=${{ env.MODEL_VERSION }}
+
+
+      - name: Get ACI FQDN and Construct API URL
+        run: |
+          sleep 20 # Give ACI a moment to provision and get FQDN
+          RETRIES=5
+          ACI_FQDN=""
+          for i in $(seq 1 $RETRIES); do
+              ACI_FQDN=$(az container show \
+                --resource-group ${{ env.ACI_RESOURCE_GROUP }} \
+                --name ${{ env.ACI_NAME }} \
+                --query ipAddress.fqdn \
+                --output tsv 2>/dev/null)
+              if [ -n "$ACI_FQDN" ]; then
+                  echo "Found ACI FQDN: ${ACI_FQDN}"
+                  break
+              fi
+              echo "ACI FQDN not yet available, retrying in 20 seconds..."
+              sleep 20
+          done
+
+          if [ -z "$ACI_FQDN" ]; then
+              echo "Failed to retrieve ACI FQDN after multiple retries. Exiting."
+              exit 1
+          fi
+
+          ACI_URL="http://${ACI_FQDN}:${{ env.ACI_PORT }}"
+          echo "ACI_URL=${ACI_URL}" >> $GITHUB_ENV
+
+      - name: Save ACI URL to artifact
+        run: |
+          echo "${{ env.ACI_URL }}" > aci_url.txt
+
+      - name: Upload ACI URL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aci-url
+          path: aci_url.txt
+          retention-days: 1
+
+      - name: Wait for ACI to be ready
+        run: |
+          echo "Waiting for ACI to become available at ${{ env.ACI_URL }}/..."
+          timeout 300 bash -c 'until curl -sS ${{ env.ACI_URL }}/ > /dev/null; do sleep 10; done'
+          echo "ACI is ready."
+
+  update_api_management:
+    needs: deploy_to_aci
+    runs-on: ubuntu-latest
+    permissions: # Permission for OIDC
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ACI URL artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: aci-url
+
+      - name: Read ACI URL
+        run: |
+          ACI_BACKEND_URL=$(cat aci_url.txt)
+          echo "ACI_BACKEND_URL=${ACI_BACKEND_URL}" >> $GITHUB_ENV
+          echo "Read ACI URL from artifact: ${ACI_BACKEND_URL}"
+
+      - name: Azure Login (for APIM update - OIDC)
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update or Create API in API Management
+        run: |
+          ACI_BACKEND_URL="${{ env.ACI_BACKEND_URL }}"
+          echo "APIM Backend URL will be: ${ACI_BACKEND_URL}"
+          
+          # Validate that we have the URL
+          if [ -z "$ACI_BACKEND_URL" ]; then
+            echo "ERROR: ACI_BACKEND_URL is empty. Cannot proceed with APIM update."
+            exit 1
+          fi
+          
+          API_EXISTS=$(az apim api show \
+            --resource-group ${{ env.APIM_RESOURCE_GROUP }} \
+            --service-name ${{ env.APIM_SERVICE_NAME }} \
+            --api-id ${{ env.APIM_API_ID }} \
+            --query name \
+            --output tsv 2>/dev/null || echo "")
+          
+          if [ -z "$API_EXISTS" ]; then
+            echo "API '${{ env.APIM_API_ID }}' does not exist. Creating new API..."
+            az apim api create \
+              --resource-group ${{ env.APIM_RESOURCE_GROUP }} \
+              --service-name ${{ env.APIM_SERVICE_NAME }} \
+              --api-id ${{ env.APIM_API_ID }} \
+              --display-name "${{ env.APIM_API_DISPLAY_NAME }}" \
+              --path ${{ env.APIM_API_SUFFIX }} \
+              --protocols Http \
+              --service-url "${ACI_BACKEND_URL}/"
+          else
+            echo "API '${{ env.APIM_API_ID }}' exists. Updating its backend URL..."
+            az apim api update \
+              --resource-group ${{ env.APIM_RESOURCE_GROUP }} \
+              --service-name ${{ env.APIM_SERVICE_NAME }} \
+              --api-id ${{ env.APIM_API_ID }} \
+              --service-url "${ACI_BACKEND_URL}/"
+          fi
+          
+          echo "API Management update complete for API ID: ${{ env.APIM_API_ID }}"
+          echo "Backend URL set to: ${ACI_BACKEND_URL}"

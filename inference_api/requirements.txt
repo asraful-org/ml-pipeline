@@ -1,0 +1,8 @@
+# inference_api/requirements.txt
+flask
+scikit-learn
+numpy
+gunicorn
+mlflow==2.7.1 # Match your training script's MLflow version
+azure-ai-ml # For MLClient
+azure-identity # For DefaultAzureCredential
