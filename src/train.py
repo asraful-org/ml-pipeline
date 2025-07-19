@@ -164,9 +164,10 @@ if __name__ == "__main__":
 
 
 
-        print(f"Logging {joblib_model_path} as an MLflow artifact...")
-        mlflow.log_artifact(joblib_model_path)
+    print(f"Logging {joblib_model_path} as an MLflow artifact...")
 
-        print("\nTraining and logging complete.")
-        print(f"View MLflow UI via Azure ML Studio: https://ml.azure.com/")
-        print("Navigate to 'Jobs' or 'Experiments' to see your runs.")
+    mlflow.log_artifact(joblib_model_path)
+
+    print("\nTraining and logging complete.")
+    print(f"View MLflow UI via Azure ML Studio: https://ml.azure.com/")
+    print("Navigate to 'Jobs' or 'Experiments' to see your runs.")
