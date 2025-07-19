@@ -76,6 +76,20 @@ jobs:
       - name: Run ML training and log with MLflow
         run: |
           python src/train.py
+          
+
+      - name: Generate Model Checksum # <<<< NEW STEP: Generate checksum after model is saved
+        id: generate_checksum
+        run: |
+          # Ensure model.pkl exists before generating checksum
+          if [ ! -f model.pkl ]; then
+            echo "Error: model.pkl not found after training. Cannot generate checksum."
+            exit 1
+          fi
+          MODEL_CHECKSUM=$(sha256sum model.pkl | awk '{print $1}')
+          echo "Model Checksum: $MODEL_CHECKSUM"
+          echo "::set-output name=checksum::$MODEL_CHECKSUM"
+
 
       - name: Upload model.pkl as GitHub Actions artifact (optional)
         uses: actions/upload-artifact@v4
@@ -99,6 +113,19 @@ jobs:
         with:
           name: trained-model-pkl # This must match the name used in the upload step
           path: inference_api/ # This will download the artifact contents into this directory (e.g., inference_api/model.pkl)
+
+      - name: Verify Model Checksum # <<<< NEW STEP: Verify checksum after download
+        run: |
+          DOWNLOADED_CHECKSUM=$(sha256sum inference_api/model.pkl | awk '{print $1}')
+          EXPECTED_CHECKSUM="${{ needs.train_model.outputs.model_checksum }}"
+          echo "Downloaded Checksum: $DOWNLOADED_CHECKSUM"
+          echo "Expected Checksum: $EXPECTED_CHECKSUM"
+          if [ "$DOWNLOADED_CHECKSUM" != "$EXPECTED_CHECKSUM" ]; then
+            echo "ERROR: Model artifact checksum mismatch! File might be corrupted during transfer."
+            exit 1
+          else
+            echo "Model artifact checksum verified successfully."
+          fi    
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

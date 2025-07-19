@@ -138,6 +138,29 @@ if __name__ == "__main__":
         print(f"Saving model with joblib to {joblib_model_path}...")
         joblib.dump(model, joblib_model_path)
 
+        print("Model saved successfully. Verifying integrity...")
+
+
+
+    try:
+        # Attempt to load the model immediately after saving
+        with open(joblib_model_path, 'rb') as f:
+            loaded_model = joblib.load(f)
+        print("Model integrity verified successfully at source.")
+        # You could even run a quick prediction with a dummy input
+        # if loaded_model is not None and hasattr(loaded_model, 'predict'):
+        dummy_input = np.array([[5.1, 3.5, 1.4, 0.2]]) # Adjust for your model's expected input
+        _ = loaded_model.predict(dummy_input)
+        print("Model can make predictions.")
+
+    except Exception as e:
+        print(f"ERROR: Model integrity check failed at source: {e}")
+        # In a real pipeline, you might want to exit with an error here
+        # to prevent a corrupted model from proceeding.
+        exit(1) # Fail the script if model is corrupted at creation
+
+
+
         print(f"Logging {joblib_model_path} as an MLflow artifact...")
         mlflow.log_artifact(joblib_model_path)
 
