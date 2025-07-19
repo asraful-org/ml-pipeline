@@ -10,7 +10,7 @@
 ##  Task Status
 
 ``` 
- Total process is automated throug Github Actions workflow 
+ Total process is automated through Github Actions workflow 
  Extensive monitoring is achieved by utilizing Azure native monitoring capability 
 ```
 
@@ -68,9 +68,11 @@
 
 - Asses Azure Devops and compare it with current github flow (integration could be easy)
 - Narrow down role based permission at Azure service principle  (Azure APP Register)
+- Introduce secure virtual network
 - Introduce infrastructure as a code (IoC) using terraform 
 - Provision Azure infrastructure automatically (CI/CD)
 - Introduce proper monitoring and observability 
+
 
 
 ## Acknowledgement of Generative AI Assistance
