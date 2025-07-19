@@ -6,8 +6,11 @@
 
 ---
 
-## 📄 Documentation
+## 📄 Documentation/Approach
+- [📋 ADR-001:ML Pipeline Design & Architecture Decisions](ADR-001_ML_Pipeline_Design_&_Architecture_Decisions.md)
 
 
+
+## Trade-off 
 ## 📄 References
 
