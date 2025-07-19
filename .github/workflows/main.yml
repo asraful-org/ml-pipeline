@@ -89,6 +89,7 @@ jobs:
           MODEL_CHECKSUM=$(sha256sum model.pkl | awk '{print $1}')
           echo "Model Checksum: $MODEL_CHECKSUM"
           echo "::set-output name=checksum::$MODEL_CHECKSUM"
+          echo "checksum=$MODEL_CHECKSUM" >> "$GITHUB_OUTPUT" # <<<< CORRECTED SYNTAX
 
 
       - name: Upload model.pkl as GitHub Actions artifact (optional)
