@@ -102,6 +102,11 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }} # Use top-level env var for subscription-id
 
+      - name: Azure Container Registry Docker Login # <--- THIS IS THE MISSING CRITICAL STEP
+        # This command uses the Azure CLI context set by `azure/login` to authenticate Docker
+        # The Service Principal (via OIDC) MUST have AcrPush (and AcrPull) roles on the ACR.
+        run: az acr login --name ${{ env.ACR_NAME }}
+
       - name: Build and push Docker image to ACR
         uses: docker/build-push-action@v5
         with:
