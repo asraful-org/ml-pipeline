@@ -11,7 +11,7 @@
 
 ``` 
  Total process is automated through Github Actions workflow 
- Extensive monitoring is achieved by utilizing Azure native monitoring capability 
+ Monitoring is achieved by utilizing Azure native monitoring capability 
 ```
 
 
@@ -24,6 +24,10 @@
 
 
 # How to Run the Training Pipeline
+
+```
+ Commit to main branch will trigger the end to end pipeline / manual trigger is also possible from githubActions 
+``` 
 - The training pipeline, defined in the train_model job of the CI/CD workflow, is responsible for ingesting data, training the machine learning model, and saving the trained artifacts.
 
 ## Prerequisites:
