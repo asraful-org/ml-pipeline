@@ -19,4 +19,12 @@ ENV AZURE_ML_WORKSPACE_NAME=""
 ENV REGISTERED_MODEL_NAME="IrisLogisticRegressionModel"
 ENV MODEL_VERSION="latest"
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "app:app"]
+
+# Health check (optional but recommended)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:5001/ || exit 1
+
+#CMD ["gunicorn", "--bind", "0.0.0.0:5001", "app:app"]
+
+# Use exec form for better signal handling
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "1", "--timeout", "60", "app:app"]
