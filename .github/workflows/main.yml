@@ -28,6 +28,8 @@ env:
   ACI_NAME: "iris-api-instance" # <<<< REPLACE with your desired ACI instance name
   ACI_PORT: 5001 # Port your Flask app exposes
 
+  AZURE_REGION: "eastus2"
+
   # Azure API Management (APIM) Details
   APIM_RESOURCE_GROUP: "ml-pipeline-dev" # <<<< REPLACE with your APIM Resource Group
   APIM_SERVICE_NAME: "ml-api-management-rg" # <<<< REPLACE with your existing APIM service name
@@ -147,6 +149,7 @@ jobs:
           image: ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           dns-name-label: iris-api-${{ github.run_id }}
           port: ${{ env.ACI_PORT }}
+          location: ${{ env.AZURE_REGION }}
           # CORRECTED: Use KEY=VALUE format for environment-variables
           environment-variables: |
             AZURE_SUBSCRIPTION_ID=${{ env.AZURE_SUBSCRIPTION_ID }}
