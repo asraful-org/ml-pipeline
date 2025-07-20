@@ -96,4 +96,10 @@ I acknowledge the partial use of generative AI tools. Specifically:
 ## 📄 References
 
 - [Architecture best practices for Azure Machine Learning](https://learn.microsoft.com/en-us/azure/well-architected/service-guides/azure-machine-learning)
+- [Safely roll out your machine learning models using Managed online endpoint in Azure Machine Learning](https://techcommunity.microsoft.com/blog/machinelearningblog/safely-roll-out-your-machine-learning-models-using-managed-online-endpoint-in-az/3823098)
+- [Serving Machine Learning Models Efficiently at Scale at Zillow](https://www.zillow.com/tech/serving-machine-learning-models-efficiently-at-scale-at-zillow/)
+- [Well-Architected machine learning](https://docs.aws.amazon.com/wellarchitected/latest/machine-learning-lens/well-architected-machine-learning.html)
+
+
+
 
